@@ -23,16 +23,22 @@ def _create_client():
 def get_sheets(category: str | None = None):
     """Возвращает итератор (sheet, category) для каждой конфигурации.
 
-    Если передан параметр `category`, фильтрует только по нему.
+    Если передан параметр `category`, фильтрует только по нему (с учётом
+    регистра и пробелов).
     Поддерживается как новый режим (SHEETS_INFO), так и старый одинарный
     SHEET_KEY/WORKSHEET_NAME для совместимости.
     """
     client = _create_client()
 
+    def _normalize(s: str) -> str:
+        return s.strip().casefold()
+
+    norm_category = _normalize(category) if category else None
+
     if SHEETS_INFO:
         for info in SHEETS_INFO:
             cat = info.get("category")
-            if category and category != cat:
+            if norm_category and cat and _normalize(cat) != norm_category:
                 continue
             try:
                 sheet = client.open_by_key(info["key"]).worksheet(info.get("worksheet"))
@@ -68,13 +74,23 @@ def _extract_digits(value: str) -> str:
 
 
 def find_by_iin(iin: str, category: str | None = None):
-    # ищем во всех конфигурациях (возможны несколько таблиц)
-    for sheet, cat in get_sheets(category):
-        rows = sheet.get_all_records()
-        for row in rows:
-            cell_digits = _extract_digits(row.get("БИН или ИИН", ""))
-            if cell_digits == iin:
-                if cat:
-                    row["_category"] = cat
-                return row
-    return None
+    """Ищет запись по IIN/BIN, сначала ограничиваясь категорией.
+
+    Если ничего не найдено и категория задана, повторяет поиск без неё.
+    """
+    def _search(cat_filter: str | None):
+        for sheet, cat in get_sheets(cat_filter):
+            rows = sheet.get_all_records()
+            for row in rows:
+                cell_digits = _extract_digits(row.get("БИН или ИИН", ""))
+                if cell_digits == iin:
+                    if cat:
+                        row["_category"] = cat
+                    return row
+        return None
+
+    result = _search(category)
+    if result is None and category:
+        # повторный поиск без фильтра — если категория была ошибочна
+        result = _search(None)
+    return result
