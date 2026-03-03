@@ -55,6 +55,23 @@ def get_sheets(category: str | None = None):
 import re
 from typing import List, Optional
 
+# ---------- варианты названий столбцов (рус / каз) ----------
+_IIN_COLUMNS = ["БИН или ИИН", "БИН немесе ЖСН"]
+_PROJECT_COLUMNS = [
+    "Название кинопроекта (название сценария)",
+    "Киножобаның атауы (сценарий атауы)",
+]
+_CATEGORY_COLUMNS = ["Фильмнің категориясы:"]
+
+
+def _first_match(row: dict, keys: list[str], default: str = "") -> str:
+    """Возвращает значение первого найденного ключа из *keys* в *row*."""
+    for k in keys:
+        val = row.get(k)
+        if val not in (None, ""):
+            return str(val)
+    return default
+
 
 def get_categories() -> List[str]:
     """Возвращает упорядоченный список уникальных категорий из конфигурации.
@@ -74,13 +91,22 @@ def _extract_digits(value: str) -> str:
 
 
 def find_all_by_iin(iin: str):
-    """Возвращает список всех записей по IIN/BIN по всем листам/категориям."""
+    """Возвращает список всех записей по IIN/BIN по всем листам/категориям.
+
+    Каждый найденный словарь дополняется ключами:
+      _project  — название кинопроекта (авто-определение рус/каз столбца)
+      _category — категория (из конфигурации или из столбца таблицы)
+    """
     found = []
     for sheet, cat in get_sheets():
         rows = sheet.get_all_records(numericise_ignore=['all'])
         for row in rows:
-            cell_digits = _extract_digits(row.get("БИН или ИИН", "")).zfill(12)
+            # ИИН/БИН — ищем в нескольких возможных столбцах
+            iin_value = _first_match(row, _IIN_COLUMNS)
+            cell_digits = _extract_digits(iin_value).zfill(12)
             if cell_digits == iin:
-                row["_category"] = cat or "—"
+                row["_project"] = _first_match(row, _PROJECT_COLUMNS, "—")
+                # категория: приоритет — конфиг, запасной вариант — столбец таблицы
+                row["_category"] = cat or _first_match(row, _CATEGORY_COLUMNS) or "—"
                 found.append(row)
     return found

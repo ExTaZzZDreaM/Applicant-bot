@@ -81,7 +81,7 @@ async def handle_iin(message: Message, state: FSMContext):
         for result in results:
             await message.answer(
                 texts.FOUND_TEMPLATE.format(
-                    project=result.get("Название кинопроекта (название сценария)", "—"),
+                    project=result.get("_project", "—"),
                     category=result.get("_category", "—"),
                 )
             )
