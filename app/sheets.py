@@ -77,9 +77,9 @@ def find_all_by_iin(iin: str):
     """Возвращает список всех записей по IIN/BIN по всем листам/категориям."""
     found = []
     for sheet, cat in get_sheets():
-        rows = sheet.get_all_records()
+        rows = sheet.get_all_records(numericise_ignore=['all'])
         for row in rows:
-            cell_digits = _extract_digits(row.get("БИН или ИИН", ""))
+            cell_digits = _extract_digits(row.get("БИН или ИИН", "")).zfill(12)
             if cell_digits == iin:
                 row["_category"] = cat or "—"
                 found.append(row)
