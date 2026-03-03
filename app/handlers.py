@@ -13,7 +13,7 @@ from aiogram.fsm.context import FSMContext
 
 from app.states import StatusFSM
 from app import texts
-from app.sheets import find_by_iin, get_categories
+from app.sheets import find_all_by_iin
 
 router = Router()
 
@@ -37,7 +37,7 @@ async def info_cmd(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="\U0001F3AC Информация по конкурсу",
-            url="https://kazakhcinema.kz/page111495056.html"
+            url="https://kazakhcinema.kz/page119249593.html"
         )],
         [InlineKeyboardButton(
             text="\U0001F310 Официальный сайт Центра",
@@ -50,36 +50,8 @@ async def info_cmd(message: Message):
 @router.message(F.text.lower() == "статус")
 @router.message(F.text == "\U0001F3AC Статус заявки")
 async def status_cmd(message: Message, state: FSMContext):
-    # спрашиваем сначала категорию
-    await state.set_state(StatusFSM.waiting_category)
-    await state.update_data(not_found_count=0)
-
-    # клавиатура с вариантами категорий
-    cats = get_categories()
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=c)] for c in cats],
-        resize_keyboard=True,
-    )
-    await message.answer(texts.ASK_CATEGORY, reply_markup=keyboard)
-
-
-@router.message(StatusFSM.waiting_category)
-async def handle_category(message: Message, state: FSMContext):
-    choice = message.text.strip()
-    cats = get_categories()
-    if choice not in cats:
-        # повторим клавиатуру
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text=c)] for c in cats],
-            resize_keyboard=True,
-        )
-        await message.answer(texts.ASK_CATEGORY, reply_markup=keyboard)
-        return
-
-    # сохраним выбор и перейдём к вводу ИИН
-    await state.update_data(category=choice, not_found_count=0)
     await state.set_state(StatusFSM.waiting_iin)
-    # вернуть основную клавиатуру, чтобы пользователь мог снова выбрать.
+    await state.update_data(not_found_count=0)
     await message.answer(texts.ASK_IIN, reply_markup=main_keyboard)
 
 
@@ -90,14 +62,8 @@ async def handle_iin(message: Message, state: FSMContext):
     # Если пользователь снова написал «статус» — сбросить счётчик
     if value.lower() == "статус":
         await state.update_data(not_found_count=0)
-        # вернуться к выбору категории
-        await state.set_state(StatusFSM.waiting_category)
-        cats = get_categories()
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text=c)] for c in cats],
-            resize_keyboard=True,
-        )
-        await message.answer(texts.ASK_CATEGORY, reply_markup=keyboard)
+        await state.set_state(StatusFSM.waiting_iin)
+        await message.answer(texts.ASK_IIN, reply_markup=main_keyboard)
         return
 
     if not value.isdigit():
@@ -108,18 +74,20 @@ async def handle_iin(message: Message, state: FSMContext):
         await message.answer(texts.WRONG_LENGTH)
         return
 
-    data = await state.get_data()
-    selected_cat = data.get("category")
-    result = await asyncio.to_thread(find_by_iin, value, selected_cat)
+    results = await asyncio.to_thread(find_all_by_iin, value)
 
-    if result:
+    if results:
         await state.update_data(not_found_count=0)
-        await message.answer(
-            texts.FOUND_TEMPLATE.format(
-                project=result.get("Название кинопроекта (название сценария)", "—"),
-                category=result.get("_category", "—"),
+        for result in results:
+            await message.answer(
+                texts.FOUND_TEMPLATE.format(
+                    project=result.get("Название кинопроекта (название сценария)", "—"),
+                    category=result.get("_category", "—"),
+                )
             )
-        )
+        await state.clear()
+        await message.answer(texts.SEARCH_COMPLETE, reply_markup=main_keyboard)
+        return
     else:
         data = await state.get_data()
         count = data.get("not_found_count", 0) + 1
@@ -127,10 +95,10 @@ async def handle_iin(message: Message, state: FSMContext):
 
         if count >= 2:
             await message.answer(texts.NOT_FOUND_SECOND)
+            await state.clear()
+            return
         else:
             await message.answer(texts.NOT_FOUND_FIRST)
-
-    # Остаёмся в состоянии waiting_iin — пользователь может ввести новый ИИН
 
 
 @router.message()

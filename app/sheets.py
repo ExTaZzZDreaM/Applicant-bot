@@ -73,24 +73,14 @@ def _extract_digits(value: str) -> str:
     return re.sub(r"\D", "", str(value))
 
 
-def find_by_iin(iin: str, category: str | None = None):
-    """Ищет запись по IIN/BIN, сначала ограничиваясь категорией.
-
-    Если ничего не найдено и категория задана, повторяет поиск без неё.
-    """
-    def _search(cat_filter: str | None):
-        for sheet, cat in get_sheets(cat_filter):
-            rows = sheet.get_all_records()
-            for row in rows:
-                cell_digits = _extract_digits(row.get("БИН или ИИН", ""))
-                if cell_digits == iin:
-                    if cat:
-                        row["_category"] = cat
-                    return row
-        return None
-
-    result = _search(category)
-    if result is None and category:
-        # повторный поиск без фильтра — если категория была ошибочна
-        result = _search(None)
-    return result
+def find_all_by_iin(iin: str):
+    """Возвращает список всех записей по IIN/BIN по всем листам/категориям."""
+    found = []
+    for sheet, cat in get_sheets():
+        rows = sheet.get_all_records()
+        for row in rows:
+            cell_digits = _extract_digits(row.get("БИН или ИИН", ""))
+            if cell_digits == iin:
+                row["_category"] = cat or "—"
+                found.append(row)
+    return found
